@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import Skeleton, { TableSkeleton } from '@/components/ui/skeleton';
 import ColumnChooser from '@/components/ui/column-chooser';
 import { supabase } from '../lib/supabase';
+import { requestNotificationPermission, notifyNewOrder, notifyOrderUpdate } from '../lib/notifications';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -69,15 +70,21 @@ export default function OrdersTable({ onUpdate }) {
 
   // Supabase Realtime subscription
   useEffect(() => {
+    requestNotificationPermission();
+
     const channel = supabase
       .channel('orders-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
         const eventType = payload.eventType;
         if (eventType === 'INSERT') {
+          const name = payload.new?.delivery_name || '';
+          const total = payload.new?.total || '';
           toast.success('New order received!', { duration: 5000 });
+          notifyNewOrder('order', name ? `${name} — ₹${total}` : undefined);
           setLiveEvent('new');
         } else if (eventType === 'UPDATE') {
           toast.info('Order updated', { duration: 3000 });
+          notifyOrderUpdate('order');
           setLiveEvent('update');
         } else if (eventType === 'DELETE') {
           toast.info('Order removed', { duration: 3000 });

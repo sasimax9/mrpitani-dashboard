@@ -51,11 +51,14 @@ All tables now have: Column Chooser, Search, Sort, Pagination, Skeleton Loading
 - Orders grid: Subscribes to `postgres_changes` on `orders` table via Supabase Realtime
 - Bulk Orders grid: Subscribes to `postgres_changes` on `bulk_orders` table
 - Green "Live" badge with pulsing dot shows connection status
-- On INSERT: Toast "New order received!" + silent grid refresh + dashboard stats update
-- On UPDATE: Toast "Order updated" + silent grid refresh
-- On DELETE: Toast "Order removed" + silent grid refresh
+- On INSERT: Toast + Sound chime (C5-E5-G5 ascending) + Browser push notification with customer name & amount
+- On UPDATE: Toast + Light single-tone sound alert
+- On DELETE: Toast notification
+- Browser notifications work even when CRM tab is in background; clicking focuses the tab
+- Permission auto-requested on first visit
 - Frontend uses @supabase/supabase-js v2.103.0
 - Env vars: REACT_APP_SUPABASE_URL, REACT_APP_SUPABASE_KEY in frontend/.env
+- Shared utility: /app/frontend/src/lib/notifications.js
 
 ### Product Images (Supabase Storage)
 - Reads 34+ images directly from Supabase storage bucket (root, items/, products/ folders)

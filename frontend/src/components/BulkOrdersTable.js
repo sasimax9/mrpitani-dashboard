@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import Skeleton, { TableSkeleton } from '@/components/ui/skeleton';
 import ColumnChooser from '@/components/ui/column-chooser';
 import { supabase } from '../lib/supabase';
+import { requestNotificationPermission, notifyNewOrder, notifyOrderUpdate } from '../lib/notifications';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -74,15 +75,21 @@ export default function BulkOrdersTable({ onUpdate }) {
 
   // Supabase Realtime subscription
   useEffect(() => {
+    requestNotificationPermission();
+
     const channel = supabase
       .channel('bulk-orders-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bulk_orders' }, (payload) => {
         const eventType = payload.eventType;
         if (eventType === 'INSERT') {
+          const name = payload.new?.contact_name || payload.new?.company_name || '';
+          const total = payload.new?.total || '';
           toast.success('New bulk order received!', { duration: 5000 });
+          notifyNewOrder('bulk', name ? `${name} — ₹${total}` : undefined);
           setLiveEvent('new');
         } else if (eventType === 'UPDATE') {
           toast.info('Bulk order updated', { duration: 3000 });
+          notifyOrderUpdate('bulk');
           setLiveEvent('update');
         } else if (eventType === 'DELETE') {
           toast.info('Bulk order removed', { duration: 3000 });
