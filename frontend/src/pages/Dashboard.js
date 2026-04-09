@@ -10,6 +10,7 @@ import BrandsManagement from '@/components/BrandsManagement';
 import OrderItemsTable from '@/components/OrderItemsTable';
 import ProductBrandVariants from '@/components/ProductBrandVariants';
 import UsersManagement from '@/components/UsersManagement';
+import ImagesManagement from '@/components/ImagesManagement';
 import { toast } from 'sonner';
 import { User } from 'lucide-react';
 
@@ -114,6 +115,9 @@ export default function Dashboard({ onLogout }) {
       case 'variants':
         return <ProductBrandVariants />;
 
+      case 'images':
+        return <ImagesManagement />;
+
       case 'users':
         return <UsersManagement />;
 
@@ -131,6 +135,7 @@ export default function Dashboard({ onLogout }) {
       products: 'Products',
       brands: 'Brands',
       variants: 'Brand Variants',
+      images: 'Product Images',
       users: 'Users',
     };
     return titles[activeModule] || 'Dashboard';

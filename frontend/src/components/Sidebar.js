@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Home, ShoppingCart, Package, TrendingUp, LogOut, Menu, X, Tag, FileText, Users, GitBranch } from 'lucide-react';
+import { Home, ShoppingCart, Package, TrendingUp, LogOut, Menu, X, Tag, FileText, Users, GitBranch, ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function Sidebar({ activeModule, onModuleChange, onLogout, userRole }) {
@@ -13,6 +13,7 @@ export default function Sidebar({ activeModule, onModuleChange, onLogout, userRo
     { id: 'products', name: 'Products', icon: TrendingUp, testId: 'nav-products', roles: ['admin', 'supervisor'] },
     { id: 'brands', name: 'Brands', icon: Tag, testId: 'nav-brands', roles: ['admin', 'supervisor'] },
     { id: 'variants', name: 'Brand Variants', icon: GitBranch, testId: 'nav-variants', roles: ['admin', 'supervisor'] },
+    { id: 'images', name: 'Product Images', icon: ImageIcon, testId: 'nav-images', roles: ['admin', 'supervisor'] },
     { id: 'users', name: 'Users', icon: Users, testId: 'nav-users', roles: ['admin'] },
   ];
 

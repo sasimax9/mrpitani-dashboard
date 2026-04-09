@@ -1,5 +1,5 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query, File, UploadFile
+from fastapi.responses import StreamingResponse, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
@@ -18,6 +18,8 @@ from decimal import Decimal
 import bcrypt
 import jwt
 from datetime import timezone
+import uuid as uuid_lib
+from storage import init_storage, put_object, get_object, list_objects
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -187,6 +189,24 @@ class ChartData(BaseModel):
     date: str
     orders: int
     earnings: float
+
+class ImageResponse(BaseModel):
+    id: str
+    storage_path: str
+    original_filename: str
+    content_type: str
+    size: int
+    url: str
+    created_at: datetime
+
+# Startup event
+@app.on_event("startup")
+async def startup():
+    try:
+        init_storage()
+        logger.info("✓ Storage initialized successfully")
+    except Exception as e:
+        logger.error(f"✗ Storage initialization failed: {e}")
 
 # Auth endpoints
 @api_router.post("/auth/login", response_model=LoginResponse)
@@ -565,15 +585,24 @@ async def get_brands(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Brand).order_by(Brand.name))
     brands = result.scalars().all()
     
-    return [
-        BrandResponse(
-            id=brand.id,
-            name=brand.name,
-            slug=brand.slug,
-            products_count=len(brand.products)
+    brand_responses = []
+    for brand in brands:
+        # Count products for this brand
+        count_result = await db.execute(
+            select(func.count(Product.id)).where(Product.brand_id == brand.id)
         )
-        for brand in brands
-    ]
+        products_count = count_result.scalar() or 0
+        
+        brand_responses.append(
+            BrandResponse(
+                id=brand.id,
+                name=brand.name,
+                slug=brand.slug,
+                products_count=products_count
+            )
+        )
+    
+    return brand_responses
 
 @api_router.post("/brands")
 async def create_brand(request: CreateBrandRequest, db: AsyncSession = Depends(get_db)):
@@ -748,6 +777,120 @@ async def export_orders(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=orders_export.csv"}
     )
+
+# Image Management Endpoints
+@api_router.post("/images/upload", response_model=ImageResponse)
+async def upload_image(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload product image to storage"""
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
+    
+    # Read file data
+    data = await file.read()
+    file_size = len(data)
+    
+    # Generate unique filename
+    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    unique_id = str(uuid_lib.uuid4())
+    storage_path = f"mrpitani-crm/product-images/{unique_id}.{ext}"
+    
+    try:
+        # Upload to storage
+        result = put_object(storage_path, data, file.content_type)
+        
+        # Save reference in database
+        from models import ProductImage
+        image = ProductImage(
+            storage_path=result["path"],
+            original_filename=file.filename,
+            content_type=file.content_type,
+            size=file_size
+        )
+        db.add(image)
+        await db.commit()
+        await db.refresh(image)
+        
+        return ImageResponse(
+            id=str(image.id),
+            storage_path=image.storage_path,
+            original_filename=image.original_filename,
+            content_type=image.content_type,
+            size=image.size,
+            url=f"/api/images/{image.id}/download",
+            created_at=image.created_at
+        )
+    except Exception as e:
+        logger.error(f"Image upload failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+@api_router.get("/images", response_model=List[ImageResponse])
+async def list_images(db: AsyncSession = Depends(get_db)):
+    """List all product images"""
+    from models import ProductImage
+    result = await db.execute(
+        select(ProductImage)
+        .where(ProductImage.is_deleted == False)
+        .order_by(ProductImage.created_at.desc())
+    )
+    images = result.scalars().all()
+    
+    return [
+        ImageResponse(
+            id=str(img.id),
+            storage_path=img.storage_path,
+            original_filename=img.original_filename,
+            content_type=img.content_type,
+            size=img.size,
+            url=f"/api/images/{img.id}/download",
+            created_at=img.created_at
+        )
+        for img in images
+    ]
+
+@api_router.get("/images/{image_id}/download")
+async def download_image(image_id: str, db: AsyncSession = Depends(get_db)):
+    """Download image by ID"""
+    from models import ProductImage
+    result = await db.execute(
+        select(ProductImage).where(
+            and_(ProductImage.id == image_id, ProductImage.is_deleted == False)
+        )
+    )
+    image = result.scalar_one_or_none()
+    
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    try:
+        data, content_type = get_object(image.storage_path)
+        return Response(
+            content=data,
+            media_type=image.content_type or content_type,
+            headers={"Content-Disposition": f'inline; filename="{image.original_filename}"'}
+        )
+    except Exception as e:
+        logger.error(f"Image download failed: {e}")
+        raise HTTPException(status_code=500, detail="Download failed")
+
+@api_router.delete("/images/{image_id}")
+async def delete_image(image_id: str, db: AsyncSession = Depends(get_db)):
+    """Soft delete image"""
+    from models import ProductImage
+    result = await db.execute(select(ProductImage).where(ProductImage.id == image_id))
+    image = result.scalar_one_or_none()
+    
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    image.is_deleted = True
+    await db.commit()
+    
+    return {"message": "Image deleted successfully"}
 
 app.include_router(api_router)
 
