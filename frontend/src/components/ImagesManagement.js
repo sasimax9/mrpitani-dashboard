@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Upload, Trash2, Image as ImageIcon } from 'lucide-react';
+import Skeleton from '@/components/ui/skeleton';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -130,8 +131,17 @@ export default function ImagesManagement() {
 
       {/* Images Grid */}
       {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">Loading images...</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="bg-card border border-border rounded-sm overflow-hidden">
+              <Skeleton className="aspect-square w-full" />
+              <div className="p-4 space-y-2">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-3 w-1/3" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : images.length === 0 ? (
         <div className="bg-card border border-border rounded-sm p-12 text-center">
@@ -152,10 +162,13 @@ export default function ImagesManagement() {
               {/* Image */}
               <div className="aspect-square bg-muted relative">
                 <img
-                  src={`${BACKEND_URL}${image.url}`}
+                  src={image.url}
                   alt={image.original_filename}
                   className="w-full h-full object-cover"
                   loading="lazy"
+                  onError={(e) => {
+                    e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2YzZjRmNiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5Y2ExYWEiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5JbWFnZTwvdGV4dD48L3N2Zz4=';
+                  }}
                 />
               </div>
 
@@ -177,7 +190,7 @@ export default function ImagesManagement() {
                     size="sm"
                     variant="outline"
                     className="flex-1 rounded-sm border-border hover:bg-muted"
-                    onClick={() => window.open(`${BACKEND_URL}${image.url}`, '_blank')}
+                    onClick={() => window.open(image.url, '_blank')}
                     data-testid={`view-image-${image.id}`}
                   >
                     <ImageIcon className="h-3 w-3 mr-1" />

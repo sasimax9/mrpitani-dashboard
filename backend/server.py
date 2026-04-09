@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query, File, UploadFile
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, desc, asc
 from database import get_db, engine
 from models import Order, BulkOrder, Product, Brand, OrderItem, User, ProductBrandVariant
 import io
@@ -19,7 +19,7 @@ import bcrypt
 import jwt
 from datetime import timezone
 import uuid as uuid_lib
-from storage import init_storage, put_object, get_object, list_objects
+from supabase_storage import upload_image as supabase_upload, delete_image as supabase_delete
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -198,15 +198,6 @@ class ImageResponse(BaseModel):
     size: int
     url: str
     created_at: datetime
-
-# Startup event
-@app.on_event("startup")
-async def startup():
-    try:
-        init_storage()
-        logger.info("✓ Storage initialized successfully")
-    except Exception as e:
-        logger.error(f"✗ Storage initialization failed: {e}")
 
 # Auth endpoints
 @api_router.post("/auth/login", response_model=LoginResponse)
@@ -499,6 +490,10 @@ async def update_bulk_order_status(
 async def get_products(
     category: Optional[str] = None,
     search: Optional[str] = None,
+    sort_by: Optional[str] = "name",
+    sort_order: Optional[str] = "asc",
+    page: int = 1,
+    limit: int = 50,
     db: AsyncSession = Depends(get_db)
 ):
     query = select(Product)
@@ -512,7 +507,17 @@ async def get_products(
     if conditions:
         query = query.where(and_(*conditions))
     
-    query = query.order_by(Product.name)
+    # Sorting
+    sort_column = getattr(Product, sort_by, Product.name)
+    if sort_order == "desc":
+        query = query.order_by(desc(sort_column))
+    else:
+        query = query.order_by(asc(sort_column))
+    
+    # Pagination
+    offset = (page - 1) * limit
+    query = query.offset(offset).limit(limit)
+    
     result = await db.execute(query)
     products = result.scalars().all()
     
@@ -581,8 +586,27 @@ async def update_product_price(
 
 # Brands endpoints
 @api_router.get("/brands", response_model=List[BrandResponse])
-async def get_brands(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Brand).order_by(Brand.name))
+async def get_brands(
+    page: int = 1,
+    limit: int = 50,
+    sort_by: Optional[str] = "name",
+    sort_order: Optional[str] = "asc",
+    db: AsyncSession = Depends(get_db)
+):
+    query = select(Brand)
+    
+    # Sorting
+    sort_column = getattr(Brand, sort_by, Brand.name)
+    if sort_order == "desc":
+        query = query.order_by(desc(sort_column))
+    else:
+        query = query.order_by(asc(sort_column))
+    
+    # Pagination
+    offset = (page - 1) * limit
+    query = query.offset(offset).limit(limit)
+    
+    result = await db.execute(query)
     brands = result.scalars().all()
     
     brand_responses = []
@@ -780,11 +804,11 @@ async def export_orders(
 
 # Image Management Endpoints
 @api_router.post("/images/upload", response_model=ImageResponse)
-async def upload_image(
+async def upload_image_endpoint(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db)
 ):
-    """Upload product image to storage"""
+    """Upload product image to Supabase Storage"""
     # Validate file type
     allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]
     if file.content_type not in allowed_types:
@@ -794,14 +818,18 @@ async def upload_image(
     data = await file.read()
     file_size = len(data)
     
+    # Validate size (5MB)
+    if file_size > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size must be less than 5MB")
+    
     # Generate unique filename
     ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
     unique_id = str(uuid_lib.uuid4())
-    storage_path = f"mrpitani-crm/product-images/{unique_id}.{ext}"
+    storage_path = f"{unique_id}.{ext}"
     
     try:
-        # Upload to storage
-        result = put_object(storage_path, data, file.content_type)
+        # Upload to Supabase Storage
+        result = supabase_upload(storage_path, data, file.content_type)
         
         # Save reference in database
         from models import ProductImage
@@ -821,7 +849,7 @@ async def upload_image(
             original_filename=image.original_filename,
             content_type=image.content_type,
             size=image.size,
-            url=f"/api/images/{image.id}/download",
+            url=result["url"],
             created_at=image.created_at
         )
     except Exception as e:
@@ -829,9 +857,11 @@ async def upload_image(
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 @api_router.get("/images", response_model=List[ImageResponse])
-async def list_images(db: AsyncSession = Depends(get_db)):
+async def list_images_endpoint(db: AsyncSession = Depends(get_db)):
     """List all product images"""
     from models import ProductImage
+    from supabase_storage import supabase
+    
     result = await db.execute(
         select(ProductImage)
         .where(ProductImage.is_deleted == False)
@@ -839,23 +869,30 @@ async def list_images(db: AsyncSession = Depends(get_db)):
     )
     images = result.scalars().all()
     
-    return [
-        ImageResponse(
-            id=str(img.id),
-            storage_path=img.storage_path,
-            original_filename=img.original_filename,
-            content_type=img.content_type,
-            size=img.size,
-            url=f"/api/images/{img.id}/download",
-            created_at=img.created_at
+    # Get public URLs from Supabase
+    responses = []
+    for img in images:
+        public_url = supabase.storage.from_("product-images").get_public_url(img.storage_path)
+        responses.append(
+            ImageResponse(
+                id=str(img.id),
+                storage_path=img.storage_path,
+                original_filename=img.original_filename,
+                content_type=img.content_type,
+                size=img.size,
+                url=public_url,
+                created_at=img.created_at
+            )
         )
-        for img in images
-    ]
+    
+    return responses
 
-@api_router.get("/images/{image_id}/download")
-async def download_image(image_id: str, db: AsyncSession = Depends(get_db)):
-    """Download image by ID"""
+@api_router.get("/images/{image_id}/url")
+async def get_image_url(image_id: str, db: AsyncSession = Depends(get_db)):
+    """Get image public URL"""
     from models import ProductImage
+    from supabase_storage import supabase
+    
     result = await db.execute(
         select(ProductImage).where(
             and_(ProductImage.id == image_id, ProductImage.is_deleted == False)
@@ -866,20 +903,12 @@ async def download_image(image_id: str, db: AsyncSession = Depends(get_db)):
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
     
-    try:
-        data, content_type = get_object(image.storage_path)
-        return Response(
-            content=data,
-            media_type=image.content_type or content_type,
-            headers={"Content-Disposition": f'inline; filename="{image.original_filename}"'}
-        )
-    except Exception as e:
-        logger.error(f"Image download failed: {e}")
-        raise HTTPException(status_code=500, detail="Download failed")
+    public_url = supabase.storage.from_("product-images").get_public_url(image.storage_path)
+    return {"url": public_url}
 
 @api_router.delete("/images/{image_id}")
-async def delete_image(image_id: str, db: AsyncSession = Depends(get_db)):
-    """Soft delete image"""
+async def delete_image_endpoint(image_id: str, db: AsyncSession = Depends(get_db)):
+    """Delete image from Supabase Storage"""
     from models import ProductImage
     result = await db.execute(select(ProductImage).where(ProductImage.id == image_id))
     image = result.scalar_one_or_none()
@@ -887,6 +916,13 @@ async def delete_image(image_id: str, db: AsyncSession = Depends(get_db)):
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
     
+    # Delete from Supabase Storage
+    try:
+        supabase_delete(image.storage_path)
+    except Exception as e:
+        logger.warning(f"Failed to delete from storage: {e}")
+    
+    # Soft delete in database
     image.is_deleted = True
     await db.commit()
     
