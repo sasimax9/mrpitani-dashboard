@@ -182,7 +182,7 @@ export default function OrdersTable({ onUpdate }) {
                       <div className="text-xs text-muted-foreground">{order.delivery_phone}</div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-sm font-medium">${order.total}</TableCell>
+                  <TableCell className="text-sm font-medium">₹{order.total}</TableCell>
                   <TableCell>{getStatusBadge(order.status)}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {format(new Date(order.created_at), 'MMM dd, yyyy')}

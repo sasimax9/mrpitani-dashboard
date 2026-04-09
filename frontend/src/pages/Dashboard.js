@@ -6,7 +6,12 @@ import OrdersTable from '@/components/OrdersTable';
 import BulkOrdersTable from '@/components/BulkOrdersTable';
 import ProductsTable from '@/components/ProductsTable';
 import OrdersChart from '@/components/OrdersChart';
+import BrandsManagement from '@/components/BrandsManagement';
+import OrderItemsTable from '@/components/OrderItemsTable';
+import ProductBrandVariants from '@/components/ProductBrandVariants';
+import UsersManagement from '@/components/UsersManagement';
 import { toast } from 'sonner';
+import { User } from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -17,6 +22,8 @@ export default function Dashboard({ onLogout }) {
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
   const email = localStorage.getItem('email');
+  const role = localStorage.getItem('role');
+  const fullName = localStorage.getItem('fullName');
 
   const fetchDashboardData = async () => {
     try {
@@ -88,6 +95,9 @@ export default function Dashboard({ onLogout }) {
           </div>
         );
 
+      case 'order-items':
+        return <OrderItemsTable />;
+
       case 'products':
         return (
           <div>
@@ -98,9 +108,32 @@ export default function Dashboard({ onLogout }) {
           </div>
         );
 
+      case 'brands':
+        return <BrandsManagement />;
+
+      case 'variants':
+        return <ProductBrandVariants />;
+
+      case 'users':
+        return <UsersManagement />;
+
       default:
         return null;
     }
+  };
+
+  const getModuleTitle = () => {
+    const titles = {
+      dashboard: 'Dashboard',
+      orders: 'Orders',
+      'bulk-orders': 'Bulk Orders',
+      'order-items': 'Order Items',
+      products: 'Products',
+      brands: 'Brands',
+      variants: 'Brand Variants',
+      users: 'Users',
+    };
+    return titles[activeModule] || 'Dashboard';
   };
 
   return (
@@ -110,6 +143,7 @@ export default function Dashboard({ onLogout }) {
         activeModule={activeModule}
         onModuleChange={setActiveModule}
         onLogout={onLogout}
+        userRole={role}
       />
 
       {/* Main Content */}
@@ -120,12 +154,20 @@ export default function Dashboard({ onLogout }) {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-xl font-semibold tracking-tight text-foreground font-heading">
-                  {activeModule === 'dashboard' && 'Dashboard'}
-                  {activeModule === 'orders' && 'Orders'}
-                  {activeModule === 'bulk-orders' && 'Bulk Orders'}
-                  {activeModule === 'products' && 'Products'}
+                  {getModuleTitle()}
                 </h1>
                 <p className="text-sm text-muted-foreground mt-1">{email}</p>
+              </div>
+              
+              {/* User Profile */}
+              <div className="flex items-center gap-3 px-4 py-2 bg-muted rounded-sm">
+                <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
+                  <User className="h-4 w-4 text-white" />
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-medium text-foreground">{fullName || email?.split('@')[0]}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{role}</p>
+                </div>
               </div>
             </div>
           </div>

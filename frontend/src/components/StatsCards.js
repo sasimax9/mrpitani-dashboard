@@ -12,7 +12,7 @@ export default function StatsCards({ stats }) {
     },
     {
       title: 'Total Earnings',
-      value: `$${(stats?.total_earnings || 0).toFixed(2)}`,
+      value: `₹${(stats?.total_earnings || 0).toFixed(2)}`,
       icon: DollarSign,
       bgColor: 'bg-success-light',
       iconColor: 'text-success-dark',
