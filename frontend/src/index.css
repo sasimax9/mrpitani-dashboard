@@ -27,3 +27,58 @@
     transition: background-color 0.2s ease-in-out;
   }
 }
+
+/* Fix transparent dropdown */
+[role="listbox"],
+[data-radix-select-content] {
+  background-color: white !important;
+  z-index: 50;
+}
+
+/* Skeleton animation */
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.animate-pulse {
+  animation: shimmer 2s infinite linear;
+  background: linear-gradient(
+    90deg,
+    #f3f4f6 0%,
+    #e5e7eb 20%,
+    #f3f4f6 40%,
+    #f3f4f6 100%
+  );
+  background-size: 1000px 100%;
+}
+
+/* Smooth transitions */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: ease-in-out;
+  transition-duration: 150ms;
+}
+
+/* Better scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f3f6f4;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2B593F;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #1C2922;
+}

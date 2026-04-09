@@ -332,6 +332,10 @@ async def get_orders(
     status: Optional[str] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    page: int = 1,
+    limit: int = 50,
+    sort_by: Optional[str] = "created_at",
+    sort_order: Optional[str] = "desc",
     db: AsyncSession = Depends(get_db)
 ):
     query = select(Order)
@@ -347,7 +351,17 @@ async def get_orders(
     if conditions:
         query = query.where(and_(*conditions))
     
-    query = query.order_by(Order.created_at.desc())
+    # Sorting
+    sort_column = getattr(Order, sort_by, Order.created_at)
+    if sort_order == "desc":
+        query = query.order_by(desc(sort_column))
+    else:
+        query = query.order_by(asc(sort_column))
+    
+    # Pagination
+    offset = (page - 1) * limit
+    query = query.offset(offset).limit(limit)
+    
     result = await db.execute(query)
     orders = result.scalars().all()
     
@@ -591,9 +605,21 @@ async def get_brands(
     limit: int = 50,
     sort_by: Optional[str] = "name",
     sort_order: Optional[str] = "asc",
+    search: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    query = select(Brand)
+    # Optimized query with product count as subquery
+    product_count_subquery = (
+        select(func.count(Product.id))
+        .where(Product.brand_id == Brand.id)
+        .scalar_subquery()
+    )
+    
+    query = select(Brand, product_count_subquery.label('products_count'))
+    
+    # Search filter
+    if search:
+        query = query.where(Brand.name.ilike(f"%{search}%"))
     
     # Sorting
     sort_column = getattr(Brand, sort_by, Brand.name)
@@ -607,26 +633,17 @@ async def get_brands(
     query = query.offset(offset).limit(limit)
     
     result = await db.execute(query)
-    brands = result.scalars().all()
+    rows = result.all()
     
-    brand_responses = []
-    for brand in brands:
-        # Count products for this brand
-        count_result = await db.execute(
-            select(func.count(Product.id)).where(Product.brand_id == brand.id)
+    return [
+        BrandResponse(
+            id=brand.id,
+            name=brand.name,
+            slug=brand.slug,
+            products_count=products_count
         )
-        products_count = count_result.scalar() or 0
-        
-        brand_responses.append(
-            BrandResponse(
-                id=brand.id,
-                name=brand.name,
-                slug=brand.slug,
-                products_count=products_count
-            )
-        )
-    
-    return brand_responses
+        for brand, products_count in rows
+    ]
 
 @api_router.post("/brands")
 async def create_brand(request: CreateBrandRequest, db: AsyncSession = Depends(get_db)):
