@@ -3,7 +3,7 @@ import { Home, ShoppingCart, Package, TrendingUp, LogOut, Menu, X } from 'lucide
 import { Button } from '@/components/ui/button';
 
 export default function Sidebar({ activeModule, onModuleChange, onLogout }) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   const modules = [
     { id: 'dashboard', name: 'Dashboard', icon: Home, testId: 'nav-dashboard' },
@@ -16,17 +16,17 @@ export default function Sidebar({ activeModule, onModuleChange, onLogout }) {
     <>
       {/* Mobile menu button */}
       <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-card border border-border rounded-sm hover:bg-muted"
+        onClick={() => setIsMobileOpen(!isMobileOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-card border border-border rounded-sm hover:bg-muted shadow-sm"
         data-testid="mobile-menu-toggle"
       >
-        {isCollapsed ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        {isMobileOpen ? <X className="h-5 w-5 text-foreground" /> : <Menu className="h-5 w-5 text-foreground" />}
       </button>
 
       {/* Sidebar */}
       <aside
-        className={`fixed left-0 top-0 h-full bg-card border-r border-border z-40 transition-all duration-200 ${
-          isCollapsed ? '-translate-x-full lg:translate-x-0' : 'translate-x-0'
+        className={`fixed left-0 top-0 h-full bg-card border-r border-border z-40 transition-all duration-300 ease-in-out ${
+          isMobileOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:translate-x-0 w-64`}
         data-testid="sidebar"
       >
@@ -84,10 +84,10 @@ export default function Sidebar({ activeModule, onModuleChange, onLogout }) {
       </aside>
 
       {/* Overlay for mobile */}
-      {!isCollapsed && (
+      {isMobileOpen && (
         <div
           className="lg:hidden fixed inset-0 bg-black/50 z-30"
-          onClick={() => setIsCollapsed(true)}
+          onClick={() => setIsMobileOpen(false)}
         />
       )}
     </>

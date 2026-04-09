@@ -7,20 +7,36 @@ import logging
 from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from database import get_db, engine
-from models import Order, BulkOrder, Product, Brand, OrderItem
+from models import Order, BulkOrder, Product, Brand, OrderItem, User, ProductBrandVariant
 import io
 import csv
 from decimal import Decimal
+import bcrypt
+import jwt
+from datetime import timezone
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+JWT_SECRET = os.environ.get('JWT_SECRET', 'your-secret-key-change-in-production')
+
+# Helper functions
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+def create_token(user_id: str, email: str, role: str) -> str:
+    payload = {'user_id': user_id, 'email': email, 'role': role}
+    return jwt.encode(payload, JWT_SECRET, algorithm='HS256')
 
 # Pydantic models
 class LoginRequest(BaseModel):
@@ -30,6 +46,27 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     token: str
     email: str
+    role: str
+    full_name: Optional[str]
+
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+    full_name: str
+    role: str = 'supervisor'
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    full_name: Optional[str]
+    role: str
+    is_active: bool
+    created_at: datetime
+
+class UpdateUserRequest(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
 
 class DashboardStats(BaseModel):
     total_orders: int
@@ -40,6 +77,8 @@ class DashboardStats(BaseModel):
     rejected_orders: int
     total_bulk_orders: int
     pending_bulk_orders: int
+    total_products: int
+    total_brands: int
 
 class OrderItemResponse(BaseModel):
     id: str
@@ -101,6 +140,43 @@ class ProductResponse(BaseModel):
     image_path: Optional[str]
     created_at: datetime
 
+class CreateProductRequest(BaseModel):
+    id: str
+    name: str
+    category: str
+    type: Optional[str] = 'veg'
+    storage: Optional[str] = 'frozen'
+    prep: Optional[str] = 'raw'
+    order: str = 'both'
+    pack_sizes: List[str] = []
+    bulk_available: bool = False
+    price: float
+    brand_id: Optional[str] = None
+
+class BrandResponse(BaseModel):
+    id: str
+    name: str
+    slug: str
+    products_count: int
+
+class CreateBrandRequest(BaseModel):
+    id: str
+    name: str
+    slug: str
+
+class ProductBrandVariantResponse(BaseModel):
+    id: str
+    product_id: str
+    product_name: str
+    brand_id: str
+    brand_name: str
+    price: float
+
+class CreateVariantRequest(BaseModel):
+    product_id: str
+    brand_id: str
+    price: float
+
 class UpdateStatusRequest(BaseModel):
     status: str
 
@@ -112,21 +188,88 @@ class ChartData(BaseModel):
     orders: int
     earnings: float
 
-# Auth endpoint
+# Auth endpoints
 @api_router.post("/auth/login", response_model=LoginResponse)
-async def login(request: LoginRequest):
-    admin_email = os.environ.get('ADMIN_EMAIL', 'admin@crm.com')
-    admin_password = os.environ.get('ADMIN_PASSWORD', 'admin123')
+async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == request.email))
+    user = result.scalar_one_or_none()
     
-    if request.email == admin_email and request.password == admin_password:
-        return LoginResponse(token="admin-token-123", email=request.email)
+    if not user or not verify_password(request.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User account is disabled")
+    
+    token = create_token(str(user.id), user.email, user.role)
+    return LoginResponse(token=token, email=user.email, role=user.role, full_name=user.full_name)
+
+@api_router.post("/auth/signup", response_model=UserResponse)
+async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
+    # Check if user exists
+    result = await db.execute(select(User).where(User.email == request.email))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Create user
+    user = User(
+        email=request.email,
+        password_hash=hash_password(request.password),
+        full_name=request.full_name,
+        role=request.role
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    
+    return UserResponse(
+        id=str(user.id),
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role,
+        is_active=user.is_active,
+        created_at=user.created_at
+    )
+
+@api_router.get("/users", response_model=List[UserResponse])
+async def get_users(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).order_by(User.created_at.desc()))
+    users = result.scalars().all()
+    
+    return [
+        UserResponse(
+            id=str(user.id),
+            email=user.email,
+            full_name=user.full_name,
+            role=user.role,
+            is_active=user.is_active,
+            created_at=user.created_at
+        )
+        for user in users
+    ]
+
+@api_router.patch("/users/{user_id}")
+async def update_user(user_id: str, request: UpdateUserRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if request.full_name is not None:
+        user.full_name = request.full_name
+    if request.role is not None:
+        user.role = request.role
+    if request.is_active is not None:
+        user.is_active = request.is_active
+    
+    user.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    
+    return {"message": "User updated successfully"}
 
 # Dashboard stats
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
-    # Count orders by status
     total_orders_result = await db.execute(select(func.count(Order.id)))
     total_orders = total_orders_result.scalar() or 0
     
@@ -142,18 +285,22 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
     rejected_result = await db.execute(select(func.count(Order.id)).where(Order.status == 'rejected'))
     rejected_orders = rejected_result.scalar() or 0
     
-    # Total earnings from completed orders
     earnings_result = await db.execute(
         select(func.coalesce(func.sum(Order.total), 0)).where(Order.status == 'completed')
     )
     total_earnings = float(earnings_result.scalar() or 0)
     
-    # Bulk orders stats
     total_bulk_result = await db.execute(select(func.count(BulkOrder.id)))
     total_bulk_orders = total_bulk_result.scalar() or 0
     
     pending_bulk_result = await db.execute(select(func.count(BulkOrder.id)).where(BulkOrder.status == 'pending'))
     pending_bulk_orders = pending_bulk_result.scalar() or 0
+    
+    total_products_result = await db.execute(select(func.count(Product.id)))
+    total_products = total_products_result.scalar() or 0
+    
+    total_brands_result = await db.execute(select(func.count(Brand.id)))
+    total_brands = total_brands_result.scalar() or 0
     
     return DashboardStats(
         total_orders=total_orders,
@@ -163,10 +310,12 @@ async def get_dashboard_stats(db: AsyncSession = Depends(get_db)):
         completed_orders=completed_orders,
         rejected_orders=rejected_orders,
         total_bulk_orders=total_bulk_orders,
-        pending_bulk_orders=pending_bulk_orders
+        pending_bulk_orders=pending_bulk_orders,
+        total_products=total_products,
+        total_brands=total_brands
     )
 
-# Get orders with filters
+# Orders endpoints
 @api_router.get("/orders", response_model=List[OrderResponse])
 async def get_orders(
     status: Optional[str] = None,
@@ -224,7 +373,6 @@ async def get_orders(
         for order in orders
     ]
 
-# Update order status
 @api_router.patch("/orders/{order_id}/status")
 async def update_order_status(
     order_id: str,
@@ -243,7 +391,26 @@ async def update_order_status(
     
     return {"message": "Order status updated successfully", "status": request.status}
 
-# Get bulk orders
+@api_router.get("/order-items", response_model=List[OrderItemResponse])
+async def get_all_order_items(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(OrderItem).order_by(OrderItem.id.desc()))
+    items = result.scalars().all()
+    
+    return [
+        OrderItemResponse(
+            id=str(item.id),
+            product_id=item.product_id,
+            product_name=item.product_name,
+            brand_name=item.brand_name,
+            pack_size=item.pack_size,
+            quantity=item.quantity,
+            unit_price=float(item.unit_price),
+            total_price=float(item.total_price)
+        )
+        for item in items
+    ]
+
+# Bulk orders endpoints
 @api_router.get("/bulk-orders", response_model=List[BulkOrderResponse])
 async def get_bulk_orders(
     status: Optional[str] = None,
@@ -289,7 +456,6 @@ async def get_bulk_orders(
         for order in bulk_orders
     ]
 
-# Update bulk order status
 @api_router.patch("/bulk-orders/{order_id}/status")
 async def update_bulk_order_status(
     order_id: str,
@@ -308,7 +474,7 @@ async def update_bulk_order_status(
     
     return {"message": "Bulk order status updated successfully", "status": request.status}
 
-# Get products
+# Products endpoints
 @api_router.get("/products", response_model=List[ProductResponse])
 async def get_products(
     category: Optional[str] = None,
@@ -350,7 +516,32 @@ async def get_products(
         for product in products
     ]
 
-# Update product price
+@api_router.post("/products")
+async def create_product(request: CreateProductRequest, db: AsyncSession = Depends(get_db)):
+    # Check if product exists
+    result = await db.execute(select(Product).where(Product.id == request.id))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Product ID already exists")
+    
+    product = Product(
+        id=request.id,
+        name=request.name,
+        category=request.category,
+        type=request.type,
+        storage=request.storage,
+        prep=request.prep,
+        order=request.order,
+        pack_sizes=request.pack_sizes,
+        bulk_available=request.bulk_available,
+        price=Decimal(str(request.price)),
+        brand_id=request.brand_id
+    )
+    db.add(product)
+    await db.commit()
+    await db.refresh(product)
+    
+    return {"message": "Product created successfully", "id": product.id}
+
 @api_router.patch("/products/{product_id}/price")
 async def update_product_price(
     product_id: str,
@@ -368,13 +559,122 @@ async def update_product_price(
     
     return {"message": "Product price updated successfully", "price": request.price}
 
-# Chart data for dashboard
+# Brands endpoints
+@api_router.get("/brands", response_model=List[BrandResponse])
+async def get_brands(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Brand).order_by(Brand.name))
+    brands = result.scalars().all()
+    
+    return [
+        BrandResponse(
+            id=brand.id,
+            name=brand.name,
+            slug=brand.slug,
+            products_count=len(brand.products)
+        )
+        for brand in brands
+    ]
+
+@api_router.post("/brands")
+async def create_brand(request: CreateBrandRequest, db: AsyncSession = Depends(get_db)):
+    # Check if brand exists
+    result = await db.execute(select(Brand).where(
+        or_(Brand.id == request.id, Brand.slug == request.slug)
+    ))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Brand ID or slug already exists")
+    
+    brand = Brand(
+        id=request.id,
+        name=request.name,
+        slug=request.slug
+    )
+    db.add(brand)
+    await db.commit()
+    await db.refresh(brand)
+    
+    return {"message": "Brand created successfully", "id": brand.id}
+
+@api_router.delete("/brands/{brand_id}")
+async def delete_brand(brand_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Brand).where(Brand.id == brand_id))
+    brand = result.scalar_one_or_none()
+    
+    if not brand:
+        raise HTTPException(status_code=404, detail="Brand not found")
+    
+    await db.delete(brand)
+    await db.commit()
+    
+    return {"message": "Brand deleted successfully"}
+
+# Product Brand Variants endpoints
+@api_router.get("/product-brand-variants", response_model=List[ProductBrandVariantResponse])
+async def get_variants(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(ProductBrandVariant, Product, Brand)
+        .join(Product, ProductBrandVariant.product_id == Product.id)
+        .join(Brand, ProductBrandVariant.brand_id == Brand.id)
+        .order_by(ProductBrandVariant.id.desc())
+    )
+    rows = result.all()
+    
+    return [
+        ProductBrandVariantResponse(
+            id=str(row[0].id),
+            product_id=row[0].product_id,
+            product_name=row[1].name,
+            brand_id=row[0].brand_id,
+            brand_name=row[2].name,
+            price=float(row[0].price)
+        )
+        for row in rows
+    ]
+
+@api_router.post("/product-brand-variants")
+async def create_variant(request: CreateVariantRequest, db: AsyncSession = Depends(get_db)):
+    # Check if variant exists
+    result = await db.execute(
+        select(ProductBrandVariant).where(
+            and_(
+                ProductBrandVariant.product_id == request.product_id,
+                ProductBrandVariant.brand_id == request.brand_id
+            )
+        )
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Variant already exists")
+    
+    variant = ProductBrandVariant(
+        product_id=request.product_id,
+        brand_id=request.brand_id,
+        price=Decimal(str(request.price))
+    )
+    db.add(variant)
+    await db.commit()
+    await db.refresh(variant)
+    
+    return {"message": "Variant created successfully", "id": str(variant.id)}
+
+@api_router.delete("/product-brand-variants/{variant_id}")
+async def delete_variant(variant_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ProductBrandVariant).where(ProductBrandVariant.id == variant_id))
+    variant = result.scalar_one_or_none()
+    
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variant not found")
+    
+    await db.delete(variant)
+    await db.commit()
+    
+    return {"message": "Variant deleted successfully"}
+
+# Chart data
 @api_router.get("/dashboard/chart-data", response_model=List[ChartData])
 async def get_chart_data(
     days: int = 7,
     db: AsyncSession = Depends(get_db)
 ):
-    from datetime import timedelta
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days)
     
@@ -399,7 +699,7 @@ async def get_chart_data(
         for row in data
     ]
 
-# Export orders to CSV
+# Export orders
 @api_router.get("/orders/export")
 async def export_orders(
     status: Optional[str] = None,
@@ -424,7 +724,6 @@ async def export_orders(
     result = await db.execute(query)
     orders = result.scalars().all()
     
-    # Create CSV
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['Order ID', 'Customer Name', 'Phone', 'Address', 'Status', 'Payment Method', 'Subtotal', 'Discount %', 'Total', 'Created At'])

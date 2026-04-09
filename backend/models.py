@@ -7,6 +7,18 @@ import uuid
 
 Base = declarative_base()
 
+class User(Base):
+    __tablename__ = 'crm_users'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    full_name = Column(String(255))
+    role = Column(String(50), nullable=False, default='supervisor')  # admin or supervisor
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
 class Order(Base):
     __tablename__ = 'orders'
     
