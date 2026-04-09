@@ -5,11 +5,29 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { Check, X } from 'lucide-react';
+import { Check, X, Search, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
 import { format } from 'date-fns';
+import Skeleton, { TableSkeleton } from '@/components/ui/skeleton';
+import ColumnChooser from '@/components/ui/column-chooser';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
+
+const ALL_COLUMNS = [
+  { key: 'id', label: 'Order ID' },
+  { key: 'company_name', label: 'Company' },
+  { key: 'contact_name', label: 'Contact Name' },
+  { key: 'contact_phone', label: 'Phone' },
+  { key: 'contact_email', label: 'Email' },
+  { key: 'total_weight_kg', label: 'Weight (kg)' },
+  { key: 'subtotal', label: 'Subtotal' },
+  { key: 'discount_percent', label: 'Discount %' },
+  { key: 'total', label: 'Total' },
+  { key: 'status', label: 'Status' },
+  { key: 'notes', label: 'Notes' },
+  { key: 'date', label: 'Date' },
+  { key: 'actions', label: 'Actions' },
+];
 
 export default function BulkOrdersTable({ onUpdate }) {
   const [orders, setOrders] = useState([]);
@@ -17,6 +35,12 @@ export default function BulkOrdersTable({ onUpdate }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const [visibleColumns, setVisibleColumns] = useState(['id', 'company_name', 'contact_name', 'total', 'status', 'date', 'actions']);
+  const limit = 50;
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -25,6 +49,11 @@ export default function BulkOrdersTable({ onUpdate }) {
       if (statusFilter !== 'all') params.append('status', statusFilter);
       if (dateFrom) params.append('date_from', dateFrom);
       if (dateTo) params.append('date_to', dateTo);
+      if (searchQuery) params.append('search', searchQuery);
+      params.append('page', page);
+      params.append('limit', limit);
+      params.append('sort_by', sortBy);
+      params.append('sort_order', sortOrder);
 
       const response = await axios.get(`${API}/bulk-orders?${params.toString()}`);
       setOrders(response.data);
@@ -37,7 +66,17 @@ export default function BulkOrdersTable({ onUpdate }) {
 
   useEffect(() => {
     fetchOrders();
-  }, [statusFilter, dateFrom, dateTo]);
+  }, [statusFilter, dateFrom, dateTo, searchQuery, page, sortBy, sortOrder]);
+
+  const handleSort = (column) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('asc');
+    }
+    setPage(1);
+  };
 
   const updateStatus = async (orderId, newStatus) => {
     try {
@@ -58,29 +97,44 @@ export default function BulkOrdersTable({ onUpdate }) {
       rejected: 'bg-red-50 text-red-700',
     };
     return (
-      <span
-        className={`px-3 py-1 rounded-sm text-xs font-medium ${styles[status] || ''}`}
-        data-testid={`bulk-order-status-${status}`}
-      >
+      <span className={`px-3 py-1 rounded-sm text-xs font-medium ${styles[status] || ''}`}>
         {status.charAt(0).toUpperCase() + status.slice(1)}
       </span>
+    );
+  };
+
+  const SortableHeader = ({ column, children }) => (
+    <TableHead
+      className="text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-muted/50"
+      onClick={() => handleSort(column)}
+    >
+      <div className="flex items-center gap-2">
+        {children}
+        <ArrowUpDown className="h-3 w-3" />
+      </div>
+    </TableHead>
+  );
+
+  const toggleColumn = (columnKey) => {
+    setVisibleColumns(prev =>
+      prev.includes(columnKey)
+        ? prev.filter(k => k !== columnKey)
+        : [...prev, columnKey]
     );
   };
 
   return (
     <div className="space-y-4" data-testid="bulk-orders-table-container">
       {/* Filters */}
-      <div className="bg-card border border-border rounded-sm p-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="bg-card border border-border rounded-sm p-4 shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">
-              Status
-            </label>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="rounded-sm border-input" data-testid="bulk-status-filter">
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">Status</label>
+            <Select value={statusFilter} onValueChange={(val) => { setStatusFilter(val); setPage(1); }}>
+              <SelectTrigger className="rounded-sm border-input" data-testid="bulk-status-filter" style={{ backgroundColor: 'white' }}>
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent style={{ backgroundColor: 'white', zIndex: 100 }}>
                 <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="approved">Approved</SelectItem>
@@ -91,110 +145,118 @@ export default function BulkOrdersTable({ onUpdate }) {
           </div>
 
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">
-              Date From
-            </label>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="rounded-sm border-input"
-              data-testid="bulk-date-from-filter"
-            />
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">Search</label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="Search company/contact..."
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+                className="pl-10 rounded-sm border-input"
+                data-testid="bulk-search-input"
+              />
+            </div>
           </div>
 
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">
-              Date To
-            </label>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="rounded-sm border-input"
-              data-testid="bulk-date-to-filter"
-            />
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">Date From</label>
+            <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} className="rounded-sm border-input" data-testid="bulk-date-from-filter" />
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">Date To</label>
+            <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} className="rounded-sm border-input" data-testid="bulk-date-to-filter" />
+          </div>
+
+          <div className="flex items-end">
+            <ColumnChooser columns={ALL_COLUMNS} visibleColumns={visibleColumns} onToggleColumn={toggleColumn} />
           </div>
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-card border border-border rounded-sm overflow-hidden">
+      <div className="bg-card border border-border rounded-sm overflow-hidden shadow-sm">
         {loading ? (
-          <div className="p-8 text-center text-muted-foreground">Loading bulk orders...</div>
+          <div className="p-6"><TableSkeleton rows={10} columns={6} /></div>
         ) : orders.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">No bulk orders found</div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50 hover:bg-muted/50">
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Order ID</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Company</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Contact</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Total</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Status</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Date</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {orders.map((order) => (
-                <TableRow key={order.id} className="border-b border-border" data-testid={`bulk-order-row-${order.id}`}>
-                  <TableCell className="text-sm font-mono">{order.id.slice(0, 8)}</TableCell>
-                  <TableCell className="text-sm font-medium">{order.company_name || 'N/A'}</TableCell>
-                  <TableCell className="text-sm">
-                    <div>
-                      <div className="font-medium">{order.contact_name}</div>
-                      <div className="text-xs text-muted-foreground">{order.contact_phone}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm font-medium">₹{order.total}</TableCell>
-                  <TableCell>{getStatusBadge(order.status)}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {format(new Date(order.created_at), 'MMM dd, yyyy')}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      {order.status === 'pending' && (
-                        <>
-                          <Button
-                            size="sm"
-                            onClick={() => updateStatus(order.id, 'approved')}
-                            className="bg-primary hover:bg-[#1C2922] text-white rounded-sm h-8 px-3"
-                            data-testid={`approve-bulk-order-${order.id}`}
-                          >
-                            <Check className="h-4 w-4 mr-1" />
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => updateStatus(order.id, 'rejected')}
-                            className="border-destructive text-destructive hover:bg-destructive hover:text-white rounded-sm h-8 px-3"
-                            data-testid={`reject-bulk-order-${order.id}`}
-                          >
-                            <X className="h-4 w-4 mr-1" />
-                            Reject
-                          </Button>
-                        </>
+          <>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50 hover:bg-muted/50">
+                    {visibleColumns.includes('id') && <TableHead className="text-xs font-semibold uppercase tracking-wider">Order ID</TableHead>}
+                    {visibleColumns.includes('company_name') && <SortableHeader column="company_name">Company</SortableHeader>}
+                    {visibleColumns.includes('contact_name') && <SortableHeader column="contact_name">Contact</SortableHeader>}
+                    {visibleColumns.includes('contact_phone') && <TableHead className="text-xs font-semibold uppercase tracking-wider">Phone</TableHead>}
+                    {visibleColumns.includes('contact_email') && <TableHead className="text-xs font-semibold uppercase tracking-wider">Email</TableHead>}
+                    {visibleColumns.includes('total_weight_kg') && <SortableHeader column="total_weight_kg">Weight (kg)</SortableHeader>}
+                    {visibleColumns.includes('subtotal') && <SortableHeader column="subtotal">Subtotal</SortableHeader>}
+                    {visibleColumns.includes('discount_percent') && <TableHead className="text-xs font-semibold uppercase tracking-wider">Discount %</TableHead>}
+                    {visibleColumns.includes('total') && <SortableHeader column="total">Total</SortableHeader>}
+                    {visibleColumns.includes('status') && <SortableHeader column="status">Status</SortableHeader>}
+                    {visibleColumns.includes('notes') && <TableHead className="text-xs font-semibold uppercase tracking-wider">Notes</TableHead>}
+                    {visibleColumns.includes('date') && <SortableHeader column="created_at">Date</SortableHeader>}
+                    {visibleColumns.includes('actions') && <TableHead className="text-xs font-semibold uppercase tracking-wider">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {orders.map((order) => (
+                    <TableRow key={order.id} className="border-b border-border hover:bg-muted/30 transition-colors" data-testid={`bulk-order-row-${order.id}`}>
+                      {visibleColumns.includes('id') && <TableCell className="text-sm font-mono">{order.id.slice(0, 8)}</TableCell>}
+                      {visibleColumns.includes('company_name') && <TableCell className="text-sm font-medium">{order.company_name || 'N/A'}</TableCell>}
+                      {visibleColumns.includes('contact_name') && <TableCell className="text-sm">{order.contact_name}</TableCell>}
+                      {visibleColumns.includes('contact_phone') && <TableCell className="text-sm text-muted-foreground">{order.contact_phone}</TableCell>}
+                      {visibleColumns.includes('contact_email') && <TableCell className="text-sm text-muted-foreground">{order.contact_email || 'N/A'}</TableCell>}
+                      {visibleColumns.includes('total_weight_kg') && <TableCell className="text-sm">{order.total_weight_kg}</TableCell>}
+                      {visibleColumns.includes('subtotal') && <TableCell className="text-sm">₹{order.subtotal}</TableCell>}
+                      {visibleColumns.includes('discount_percent') && <TableCell className="text-sm">{order.discount_percent}%</TableCell>}
+                      {visibleColumns.includes('total') && <TableCell className="text-sm font-medium">₹{order.total}</TableCell>}
+                      {visibleColumns.includes('status') && <TableCell>{getStatusBadge(order.status)}</TableCell>}
+                      {visibleColumns.includes('notes') && <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{order.notes || '-'}</TableCell>}
+                      {visibleColumns.includes('date') && <TableCell className="text-sm text-muted-foreground">{format(new Date(order.created_at), 'MMM dd, yyyy')}</TableCell>}
+                      {visibleColumns.includes('actions') && (
+                        <TableCell>
+                          <div className="flex gap-2">
+                            {order.status === 'pending' && (
+                              <>
+                                <Button size="sm" onClick={() => updateStatus(order.id, 'approved')} className="bg-primary hover:bg-[#1C2922] text-white rounded-sm h-8 px-3" data-testid={`approve-bulk-order-${order.id}`}>
+                                  <Check className="h-4 w-4 mr-1" /> Approve
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => updateStatus(order.id, 'rejected')} className="border-destructive text-destructive hover:bg-destructive hover:text-white rounded-sm h-8 px-3" data-testid={`reject-bulk-order-${order.id}`}>
+                                  <X className="h-4 w-4 mr-1" /> Reject
+                                </Button>
+                              </>
+                            )}
+                            {order.status === 'approved' && (
+                              <Button size="sm" onClick={() => updateStatus(order.id, 'completed')} className="bg-success-dark hover:bg-[#1C2922] text-white rounded-sm h-8 px-3" data-testid={`complete-bulk-order-${order.id}`}>
+                                <Check className="h-4 w-4 mr-1" /> Complete
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
                       )}
-                      {order.status === 'approved' && (
-                        <Button
-                          size="sm"
-                          onClick={() => updateStatus(order.id, 'completed')}
-                          className="bg-success-dark hover:bg-[#1C2922] text-white rounded-sm h-8 px-3"
-                          data-testid={`complete-bulk-order-${order.id}`}
-                        >
-                          <Check className="h-4 w-4 mr-1" />
-                          Complete
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between p-4 border-t border-border bg-muted/20">
+              <div className="text-sm text-muted-foreground">Page {page} • Showing {orders.length} bulk orders</div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="rounded-sm">
+                  <ChevronLeft className="h-4 w-4" /> Previous
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={orders.length < limit} className="rounded-sm">
+                  Next <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>

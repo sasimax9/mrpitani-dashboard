@@ -242,8 +242,41 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
     )
 
 @api_router.get("/users", response_model=List[UserResponse])
-async def get_users(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).order_by(User.created_at.desc()))
+async def get_users(
+    page: int = 1,
+    limit: int = 50,
+    sort_by: Optional[str] = "created_at",
+    sort_order: Optional[str] = "desc",
+    search: Optional[str] = None,
+    role: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    query = select(User)
+    
+    conditions = []
+    if search:
+        conditions.append(
+            or_(
+                User.email.ilike(f"%{search}%"),
+                User.full_name.ilike(f"%{search}%")
+            )
+        )
+    if role:
+        conditions.append(User.role == role)
+    
+    if conditions:
+        query = query.where(and_(*conditions))
+    
+    sort_column = getattr(User, sort_by, User.created_at)
+    if sort_order == "desc":
+        query = query.order_by(desc(sort_column))
+    else:
+        query = query.order_by(asc(sort_column))
+    
+    offset = (page - 1) * limit
+    query = query.offset(offset).limit(limit)
+    
+    result = await db.execute(query)
     users = result.scalars().all()
     
     return [
@@ -417,8 +450,37 @@ async def update_order_status(
     return {"message": "Order status updated successfully", "status": request.status}
 
 @api_router.get("/order-items", response_model=List[OrderItemResponse])
-async def get_all_order_items(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(OrderItem).order_by(OrderItem.id.desc()))
+async def get_all_order_items(
+    page: int = 1,
+    limit: int = 50,
+    sort_by: Optional[str] = "id",
+    sort_order: Optional[str] = "desc",
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    query = select(OrderItem)
+    
+    # Search
+    if search:
+        query = query.where(
+            or_(
+                OrderItem.product_name.ilike(f"%{search}%"),
+                OrderItem.brand_name.ilike(f"%{search}%")
+            )
+        )
+    
+    # Sorting
+    sort_column = getattr(OrderItem, sort_by, OrderItem.id)
+    if sort_order == "desc":
+        query = query.order_by(desc(sort_column))
+    else:
+        query = query.order_by(asc(sort_column))
+    
+    # Pagination
+    offset = (page - 1) * limit
+    query = query.offset(offset).limit(limit)
+    
+    result = await db.execute(query)
     items = result.scalars().all()
     
     return [
@@ -441,6 +503,11 @@ async def get_bulk_orders(
     status: Optional[str] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    page: int = 1,
+    limit: int = 50,
+    sort_by: Optional[str] = "created_at",
+    sort_order: Optional[str] = "desc",
+    search: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
     query = select(BulkOrder)
@@ -452,11 +519,28 @@ async def get_bulk_orders(
         conditions.append(BulkOrder.created_at >= datetime.combine(date_from, datetime.min.time()))
     if date_to:
         conditions.append(BulkOrder.created_at <= datetime.combine(date_to, datetime.max.time()))
+    if search:
+        conditions.append(
+            or_(
+                BulkOrder.company_name.ilike(f"%{search}%"),
+                BulkOrder.contact_name.ilike(f"%{search}%")
+            )
+        )
     
     if conditions:
         query = query.where(and_(*conditions))
     
-    query = query.order_by(BulkOrder.created_at.desc())
+    # Sorting
+    sort_column = getattr(BulkOrder, sort_by, BulkOrder.created_at)
+    if sort_order == "desc":
+        query = query.order_by(desc(sort_column))
+    else:
+        query = query.order_by(asc(sort_column))
+    
+    # Pagination
+    offset = (page - 1) * limit
+    query = query.offset(offset).limit(limit)
+    
     result = await db.execute(query)
     bulk_orders = result.scalars().all()
     
@@ -680,13 +764,44 @@ async def delete_brand(brand_id: str, db: AsyncSession = Depends(get_db)):
 
 # Product Brand Variants endpoints
 @api_router.get("/product-brand-variants", response_model=List[ProductBrandVariantResponse])
-async def get_variants(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
+async def get_variants(
+    page: int = 1,
+    limit: int = 50,
+    sort_by: Optional[str] = "id",
+    sort_order: Optional[str] = "desc",
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    query = (
         select(ProductBrandVariant, Product, Brand)
         .join(Product, ProductBrandVariant.product_id == Product.id)
         .join(Brand, ProductBrandVariant.brand_id == Brand.id)
-        .order_by(ProductBrandVariant.id.desc())
     )
+    
+    # Search
+    if search:
+        query = query.where(
+            or_(
+                Product.name.ilike(f"%{search}%"),
+                Brand.name.ilike(f"%{search}%")
+            )
+        )
+    
+    # Sorting (on variant table)
+    if sort_by in ['id', 'price']:
+        sort_column = getattr(ProductBrandVariant, sort_by)
+        if sort_order == "desc":
+            query = query.order_by(desc(sort_column))
+        else:
+            query = query.order_by(asc(sort_column))
+    else:
+        query = query.order_by(desc(ProductBrandVariant.id))
+    
+    # Pagination
+    offset = (page - 1) * limit
+    query = query.offset(offset).limit(limit)
+    
+    result = await db.execute(query)
     rows = result.all()
     
     return [
