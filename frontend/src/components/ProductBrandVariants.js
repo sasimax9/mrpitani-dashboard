@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Plus, Trash2, Search, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
+import { Plus, Trash2, Search, ChevronLeft, ChevronRight, ArrowUpDown, Edit } from 'lucide-react';
 import Skeleton, { TableSkeleton } from '@/components/ui/skeleton';
 import ColumnChooser from '@/components/ui/column-chooser';
 
@@ -29,6 +29,8 @@ export default function ProductBrandVariants() {
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newVariant, setNewVariant] = useState({ product_id: '', brand_id: '', price: '' });
+  const [editingVariant, setEditingVariant] = useState(null);
+  const [editPrice, setEditPrice] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState('id');

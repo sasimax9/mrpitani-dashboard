@@ -854,6 +854,23 @@ async def delete_variant(variant_id: str, db: AsyncSession = Depends(get_db)):
     
     return {"message": "Variant deleted successfully"}
 
+@api_router.patch("/product-brand-variants/{variant_id}/price")
+async def update_variant_price(variant_id: str, data: dict, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ProductBrandVariant).where(ProductBrandVariant.id == variant_id))
+    variant = result.scalar_one_or_none()
+    
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variant not found")
+    
+    new_price = data.get("price")
+    if new_price is None:
+        raise HTTPException(status_code=400, detail="Price is required")
+    
+    variant.price = float(new_price)
+    await db.commit()
+    
+    return {"message": "Variant price updated successfully", "variant_id": variant_id, "price": variant.price}
+
 # Chart data
 @api_router.get("/dashboard/chart-data", response_model=List[ChartData])
 async def get_chart_data(
