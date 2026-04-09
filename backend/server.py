@@ -934,131 +934,146 @@ async def export_orders(
         headers={"Content-Disposition": "attachment; filename=orders_export.csv"}
     )
 
-# Image Management Endpoints
-@api_router.post("/images/upload", response_model=ImageResponse)
-async def upload_image_endpoint(
+# Image Management Endpoints - reads from Supabase Storage bucket directly
+@api_router.get("/storage/images")
+async def list_storage_images(db: AsyncSession = Depends(get_db)):
+    """List all images from Supabase storage bucket, matched to products"""
+    from supabase_storage import supabase
+    
+    bucket = "product-images"
+    all_images = []
+    
+    # List root-level files
+    try:
+        root_files = supabase.storage.from_(bucket).list()
+        for f in root_files:
+            if f.get("id") and f.get("metadata") and f["metadata"].get("mimetype", "").startswith("image/"):
+                path = f["name"]
+                all_images.append({
+                    "path": path,
+                    "name": f["name"],
+                    "size": f["metadata"].get("size", 0),
+                    "content_type": f["metadata"].get("mimetype", ""),
+                    "url": supabase.storage.from_(bucket).get_public_url(path),
+                    "created_at": f.get("created_at"),
+                })
+    except Exception as e:
+        logger.warning(f"Error listing root files: {e}")
+    
+    # List items/ subfolder
+    try:
+        items_files = supabase.storage.from_(bucket).list("items")
+        for f in items_files:
+            if f.get("id") and f.get("metadata") and f["metadata"].get("mimetype", "").startswith("image/"):
+                path = f"items/{f['name']}"
+                all_images.append({
+                    "path": path,
+                    "name": f["name"],
+                    "size": f["metadata"].get("size", 0),
+                    "content_type": f["metadata"].get("mimetype", ""),
+                    "url": supabase.storage.from_(bucket).get_public_url(path),
+                    "created_at": f.get("created_at"),
+                })
+    except Exception as e:
+        logger.warning(f"Error listing items/ files: {e}")
+    
+    # List products/ subfolder
+    try:
+        prod_files = supabase.storage.from_(bucket).list("products")
+        for f in prod_files:
+            if f.get("id") and f.get("metadata") and f["metadata"].get("mimetype", "").startswith("image/"):
+                path = f"products/{f['name']}"
+                all_images.append({
+                    "path": path,
+                    "name": f["name"],
+                    "size": f["metadata"].get("size", 0),
+                    "content_type": f["metadata"].get("mimetype", ""),
+                    "url": supabase.storage.from_(bucket).get_public_url(path),
+                    "created_at": f.get("created_at"),
+                })
+    except Exception as e:
+        logger.warning(f"Error listing products/ files: {e}")
+    
+    # Get all products with image_path to match
+    result = await db.execute(
+        select(Product.id, Product.name, Product.image_path)
+        .where(Product.image_path.isnot(None))
+    )
+    products_with_images = {row[2]: {"product_id": row[0], "product_name": row[1]} for row in result.all()}
+    
+    # Match images to products
+    for img in all_images:
+        match = products_with_images.get(img["path"])
+        if match:
+            img["product_id"] = match["product_id"]
+            img["product_name"] = match["product_name"]
+        else:
+            img["product_id"] = None
+            img["product_name"] = None
+    
+    return all_images
+
+@api_router.post("/products/{product_id}/image")
+async def upload_product_image(
+    product_id: str,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db)
 ):
-    """Upload product image to Supabase Storage"""
-    # Validate file type
+    """Upload image for a specific product to Supabase Storage"""
+    # Check product exists
+    result = await db.execute(select(Product).where(Product.id == product_id))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
     allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Only image files are allowed")
     
-    # Read file data
     data = await file.read()
-    file_size = len(data)
-    
-    # Validate size (5MB)
-    if file_size > 5 * 1024 * 1024:
+    if len(data) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File size must be less than 5MB")
     
-    # Generate unique filename
     ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
-    unique_id = str(uuid_lib.uuid4())
-    storage_path = f"{unique_id}.{ext}"
+    storage_path = f"products/{product_id}.{ext}"
     
     try:
-        # Upload to Supabase Storage
-        result = supabase_upload(storage_path, data, file.content_type)
-        
-        # Save reference in database
-        from models import ProductImage
-        image = ProductImage(
-            storage_path=result["path"],
-            original_filename=file.filename,
-            content_type=file.content_type,
-            size=file_size
-        )
-        db.add(image)
+        result_upload = supabase_upload(storage_path, data, file.content_type)
+        # Update product's image_path
+        product.image_path = storage_path
         await db.commit()
-        await db.refresh(image)
         
-        return ImageResponse(
-            id=str(image.id),
-            storage_path=image.storage_path,
-            original_filename=image.original_filename,
-            content_type=image.content_type,
-            size=image.size,
-            url=result["url"],
-            created_at=image.created_at
-        )
+        return {
+            "message": "Image uploaded successfully",
+            "product_id": product_id,
+            "storage_path": storage_path,
+            "url": result_upload["url"]
+        }
     except Exception as e:
-        logger.error(f"Image upload failed: {e}")
+        logger.error(f"Product image upload failed: {e}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
-@api_router.get("/images", response_model=List[ImageResponse])
-async def list_images_endpoint(db: AsyncSession = Depends(get_db)):
-    """List all product images"""
-    from models import ProductImage
-    from supabase_storage import supabase
+@api_router.patch("/products/{product_id}/assign-image")
+async def assign_image_to_product(
+    product_id: str,
+    db: AsyncSession = Depends(get_db),
+    image_path: str = Query(...)
+):
+    """Assign an existing bucket image to a product"""
+    result = await db.execute(select(Product).where(Product.id == product_id))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
     
-    result = await db.execute(
-        select(ProductImage)
-        .where(ProductImage.is_deleted == False)
-        .order_by(ProductImage.created_at.desc())
-    )
-    images = result.scalars().all()
-    
-    # Get public URLs from Supabase
-    responses = []
-    for img in images:
-        public_url = supabase.storage.from_("product-images").get_public_url(img.storage_path)
-        responses.append(
-            ImageResponse(
-                id=str(img.id),
-                storage_path=img.storage_path,
-                original_filename=img.original_filename,
-                content_type=img.content_type,
-                size=img.size,
-                url=public_url,
-                created_at=img.created_at
-            )
-        )
-    
-    return responses
-
-@api_router.get("/images/{image_id}/url")
-async def get_image_url(image_id: str, db: AsyncSession = Depends(get_db)):
-    """Get image public URL"""
-    from models import ProductImage
-    from supabase_storage import supabase
-    
-    result = await db.execute(
-        select(ProductImage).where(
-            and_(ProductImage.id == image_id, ProductImage.is_deleted == False)
-        )
-    )
-    image = result.scalar_one_or_none()
-    
-    if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
-    
-    public_url = supabase.storage.from_("product-images").get_public_url(image.storage_path)
-    return {"url": public_url}
-
-@api_router.delete("/images/{image_id}")
-async def delete_image_endpoint(image_id: str, db: AsyncSession = Depends(get_db)):
-    """Delete image from Supabase Storage"""
-    from models import ProductImage
-    result = await db.execute(select(ProductImage).where(ProductImage.id == image_id))
-    image = result.scalar_one_or_none()
-    
-    if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
-    
-    # Delete from Supabase Storage
-    try:
-        supabase_delete(image.storage_path)
-    except Exception as e:
-        logger.warning(f"Failed to delete from storage: {e}")
-    
-    # Soft delete in database
-    image.is_deleted = True
+    product.image_path = image_path
     await db.commit()
-    
-    return {"message": "Image deleted successfully"}
+    return {"message": "Image assigned to product", "product_id": product_id, "image_path": image_path}
+
+@api_router.get("/products-simple")
+async def get_products_simple(db: AsyncSession = Depends(get_db)):
+    """Lightweight product list for dropdowns (id + name only)"""
+    result = await db.execute(select(Product.id, Product.name).order_by(Product.name))
+    return [{"id": row[0], "name": row[1]} for row in result.all()]
 
 app.include_router(api_router)
 
