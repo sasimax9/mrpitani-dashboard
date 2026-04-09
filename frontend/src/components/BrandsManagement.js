@@ -6,7 +6,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
+import Skeleton, { TableSkeleton } from '@/components/ui/skeleton';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -16,11 +17,21 @@ export default function BrandsManagement() {
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [newBrand, setNewBrand] = useState({ id: '', name: '', slug: '' });
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState('name');
+  const [sortOrder, setSortOrder] = useState('asc');
+  const limit = 50;
 
   const fetchBrands = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${API}/brands`);
+      const params = new URLSearchParams();
+      params.append('page', page);
+      params.append('limit', limit);
+      params.append('sort_by', sortBy);
+      params.append('sort_order', sortOrder);
+
+      const response = await axios.get(`${API}/brands?${params.toString()}`);
       setBrands(response.data);
     } catch (error) {
       toast.error('Failed to load brands');
@@ -31,7 +42,17 @@ export default function BrandsManagement() {
 
   useEffect(() => {
     fetchBrands();
-  }, []);
+  }, [page, sortBy, sortOrder]);
+
+  const handleSort = (column) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('asc');
+    }
+    setPage(1);
+  };
 
   const handleAddBrand = async () => {
     if (!newBrand.id || !newBrand.name || !newBrand.slug) {
@@ -62,6 +83,18 @@ export default function BrandsManagement() {
     }
   };
 
+  const SortableHeader = ({ column, children }) => (
+    <TableHead 
+      className="text-xs font-semibold uppercase tracking-wider cursor-pointer hover:bg-muted/50"
+      onClick={() => handleSort(column)}
+    >
+      <div className="flex items-center gap-2">
+        {children}
+        <ArrowUpDown className="h-3 w-3" />
+      </div>
+    </TableHead>
+  );
+
   return (
     <div className="space-y-4" data-testid="brands-management">
       {/* Header */}
@@ -85,42 +118,77 @@ export default function BrandsManagement() {
       {/* Table */}
       <div className="bg-card border border-border rounded-sm overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-muted-foreground">Loading brands...</div>
+          <div className="p-6">
+            <TableSkeleton rows={10} columns={5} />
+          </div>
         ) : brands.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">No brands found</div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50 hover:bg-muted/50">
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Brand ID</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Name</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Slug</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Products</TableHead>
-                <TableHead className="text-xs font-semibold uppercase tracking-wider">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {brands.map((brand) => (
-                <TableRow key={brand.id} className="border-b border-border" data-testid={`brand-row-${brand.id}`}>
-                  <TableCell className="text-sm font-mono">{brand.id}</TableCell>
-                  <TableCell className="text-sm font-medium">{brand.name}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{brand.slug}</TableCell>
-                  <TableCell className="text-sm">{brand.products_count}</TableCell>
-                  <TableCell>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleDeleteBrand(brand.id)}
-                      className="border-destructive text-destructive hover:bg-destructive hover:text-white rounded-sm h-8 px-3"
-                      data-testid={`delete-brand-${brand.id}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50 hover:bg-muted/50">
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider">Brand ID</TableHead>
+                    <SortableHeader column="name">Name</SortableHeader>
+                    <SortableHeader column="slug">Slug</SortableHeader>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider">Products</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {brands.map((brand) => (
+                    <TableRow key={brand.id} className="border-b border-border hover:bg-muted/30" data-testid={`brand-row-${brand.id}`}>
+                      <TableCell className="text-sm font-mono">{brand.id}</TableCell>
+                      <TableCell className="text-sm font-medium">{brand.name}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{brand.slug}</TableCell>
+                      <TableCell className="text-sm">{brand.products_count}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDeleteBrand(brand.id)}
+                          className="border-destructive text-destructive hover:bg-destructive hover:text-white rounded-sm h-8 px-3"
+                          data-testid={`delete-brand-${brand.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between p-4 border-t border-border">
+              <div className="text-sm text-muted-foreground">
+                Page {page} • Showing {brands.length} brands
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="rounded-sm"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={brands.length < limit}
+                  className="rounded-sm"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
