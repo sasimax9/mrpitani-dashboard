@@ -47,6 +47,16 @@ All tables now have: Column Chooser, Search, Sort, Pagination, Skeleton Loading
 - Shows: Product, Brand, Pack Size, Qty, Unit Price, Total
 - Linked via orders.id = order_items.order_id
 
+### Supabase Realtime (Live Updates)
+- Orders grid: Subscribes to `postgres_changes` on `orders` table via Supabase Realtime
+- Bulk Orders grid: Subscribes to `postgres_changes` on `bulk_orders` table
+- Green "Live" badge with pulsing dot shows connection status
+- On INSERT: Toast "New order received!" + silent grid refresh + dashboard stats update
+- On UPDATE: Toast "Order updated" + silent grid refresh
+- On DELETE: Toast "Order removed" + silent grid refresh
+- Frontend uses @supabase/supabase-js v2.103.0
+- Env vars: REACT_APP_SUPABASE_URL, REACT_APP_SUPABASE_KEY in frontend/.env
+
 ### Product Images (Supabase Storage)
 - Reads 34+ images directly from Supabase storage bucket (root, items/, products/ folders)
 - Matches images to products via image_path column (20 assigned, 14 unassigned)

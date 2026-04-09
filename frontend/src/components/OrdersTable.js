@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { Check, X, Download, Search, ChevronLeft, ChevronRight, ArrowUpDown, ChevronDown, ChevronUp } from 'lucide-react';
+import { Check, X, Download, Search, ChevronLeft, ChevronRight, ArrowUpDown, ChevronDown, ChevronUp, Radio } from 'lucide-react';
 import { format } from 'date-fns';
 import Skeleton, { TableSkeleton } from '@/components/ui/skeleton';
 import ColumnChooser from '@/components/ui/column-chooser';
+import { supabase } from '../lib/supabase';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -36,10 +37,13 @@ export default function OrdersTable({ onUpdate }) {
   const [sortOrder, setSortOrder] = useState('desc');
   const [visibleColumns, setVisibleColumns] = useState(['id', 'customer', 'total', 'status', 'date', 'actions']);
   const [expandedOrder, setExpandedOrder] = useState(null);
+  const [isLive, setIsLive] = useState(false);
+  const [liveEvent, setLiveEvent] = useState(null);
   const limit = 50;
+  const channelRef = useRef(null);
 
-  const fetchOrders = async () => {
-    setLoading(true);
+  const fetchOrders = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (statusFilter !== 'all') params.append('status', statusFilter);
@@ -53,15 +57,50 @@ export default function OrdersTable({ onUpdate }) {
       const response = await axios.get(`${API}/orders?${params.toString()}`);
       setOrders(response.data);
     } catch (error) {
-      toast.error('Failed to load orders');
+      if (!silent) toast.error('Failed to load orders');
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, dateFrom, dateTo, page, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchOrders();
-  }, [statusFilter, dateFrom, dateTo, page, sortBy, sortOrder]);
+  }, [fetchOrders]);
+
+  // Supabase Realtime subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('orders-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+        const eventType = payload.eventType;
+        if (eventType === 'INSERT') {
+          toast.success('New order received!', { duration: 5000 });
+          setLiveEvent('new');
+        } else if (eventType === 'UPDATE') {
+          toast.info('Order updated', { duration: 3000 });
+          setLiveEvent('update');
+        } else if (eventType === 'DELETE') {
+          toast.info('Order removed', { duration: 3000 });
+          setLiveEvent('delete');
+        }
+        // Refresh data silently
+        fetchOrders(true);
+        if (onUpdate) onUpdate();
+        // Clear live event indicator after 3s
+        setTimeout(() => setLiveEvent(null), 3000);
+      })
+      .subscribe((status) => {
+        setIsLive(status === 'SUBSCRIBED');
+      });
+
+    channelRef.current = channel;
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+    };
+  }, [fetchOrders, onUpdate]);
 
   const handleSort = (column) => {
     if (sortBy === column) {
@@ -143,6 +182,19 @@ export default function OrdersTable({ onUpdate }) {
 
   return (
     <div className="space-y-4" data-testid="orders-table-container">
+      {/* Live indicator */}
+      <div className="flex items-center gap-3">
+        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-sm text-xs font-medium ${isLive ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-muted text-muted-foreground border border-border'}`} data-testid="orders-live-indicator">
+          <span className={`inline-block w-2 h-2 rounded-full ${isLive ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground'}`}></span>
+          {isLive ? 'Live' : 'Connecting...'}
+        </div>
+        {liveEvent && (
+          <span className={`px-3 py-1.5 rounded-sm text-xs font-medium animate-pulse ${liveEvent === 'new' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`} data-testid="orders-live-event">
+            {liveEvent === 'new' ? 'New order received' : liveEvent === 'update' ? 'Order updated' : 'Order removed'}
+          </span>
+        )}
+      </div>
+
       {/* Filters */}
       <div className="bg-card border border-border rounded-sm p-4 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
