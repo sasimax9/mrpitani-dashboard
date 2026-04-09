@@ -1,0 +1,91 @@
+{
+  "theme": "light",
+  "archetype": "1 (Organic & Earthy)",
+  "vibe": "Calm, grounded, minimalist, and deeply professional. Reduces cognitive overload using strategic minimalism, bold clean typography, and airy layouts.",
+  "typography": {
+    "fonts": {
+      "heading": "Manrope",
+      "body": "IBM Plex Sans",
+      "mono": "JetBrains Mono"
+    },
+    "scale_rules": {
+      "h1": "text-3xl sm:text-4xl tracking-tight font-bold text-foreground",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-semibold text-foreground",
+      "h3": "text-xl sm:text-2xl tracking-tight font-medium text-foreground",
+      "body": "text-base leading-relaxed text-muted-foreground",
+      "small": "text-sm text-muted-foreground",
+      "overline": "text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground"
+    },
+    "instructions": "Never use Inter or generic sans for headings. Ensure tight letter spacing (tracking-tight) on all headings above 24px."
+  },
+  "colors": {
+    "background": "#FCFDFB",
+    "foreground": "#1C2922",
+    "card": "#FFFFFF",
+    "card_foreground": "#1C2922",
+    "primary": "#2B593F",
+    "primary_foreground": "#FFFFFF",
+    "secondary": "#E4EBE4",
+    "secondary_foreground": "#1C2922",
+    "muted": "#F3F6F4",
+    "muted_foreground": "#4B5E53",
+    "accent": "#F3F6F4",
+    "accent_foreground": "#1C2922",
+    "destructive": "#993333",
+    "destructive_foreground": "#FFFFFF",
+    "border": "#E4EBE4",
+    "input": "#E4EBE4",
+    "ring": "#2B593F",
+    "success_light": "#EAF5ED",
+    "success_dark": "#2B593F",
+    "warning_light": "#FFF9E6",
+    "warning_dark": "#B38600"
+  },
+  "surfaces_and_borders": {
+    "cards": "Flat background (bg-card), sharp or slightly rounded corners (rounded-sm or max rounded-md), crisp 1px border (border-border), absolutely NO drop shadows. Elevate purely through borders and negative space.",
+    "hover_states": "Slight background tint change (hover:bg-muted) rather than adding shadows.",
+    "radius": "4px (rounded-sm) for a structured, architectural feel. Avoid pill-shaped buttons unless it's a specific filter chip."
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous Spacing Philosophy. Use 2-3x more spacing than typical dense SaaS apps.",
+    "grid": "Control Room Grid with breathing room. Use grid-cols-1 md:grid-cols-4 or md:grid-cols-12 for complex layouts. Gap-6 or gap-8.",
+    "padding": "Containers with borders must have internal padding of at least p-6 or p-8.",
+    "table_layout": "Minimal table-focused layout. Tables should stretch full width without being enclosed in a heavily padded card. The table header should have a subtle background (bg-muted/50), but rows should just have a simple border-b border-border."
+  },
+  "components": {
+    "tables": "Use Shadcn Table but customize it: remove outer borders, use border-y only for rows. Generous padding in cells (py-4 px-4). text-sm for data, text-xs uppercase tracking-wider for headers. Use organic color coding for statuses (e.g. success_light bg with success_dark text for 'Completed').",
+    "charts": "Use Recharts (via Shadcn Chart). Keep tooltips minimal. Colors: use primary (#2B593F) and a lighter sage (#A3E6B4) for data lines/bars. No grid lines except subtle horizontal guides.",
+    "buttons": "Shadcn Button. Override radius to rounded-sm. Primary button: bg-[#2B593F] hover:bg-[#1C2922] text-white. Outline button: border-border text-foreground hover:bg-muted.",
+    "forms": "Use Shadcn Form, Input, Select. Ensure 1px solid border (border-input), focus state must have a crisp ring (focus:ring-2 focus:ring-primary focus:ring-offset-1).",
+    "navigation": "Top or side navigation should use a solid background (bg-card or bg-background) with a bottom or right 1px border. No glassmorphism here, keep it solid and grounded."
+  },
+  "motion": {
+    "transitions": "Fast and snappy. transition-all duration-200 ease-in-out.",
+    "interactions": "All interactive elements must have a distinct hover state (e.g. background color shift) and focus-visible state for accessibility."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "category": "abstract_background",
+        "url": "https://images.unsplash.com/photo-1764437835866-73c7d0961c46?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODh8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMHN1YnRsZSUyMGdyZWVuJTIwdGV4dHVyZXxlbnwwfHx8fDE3NzU3MzUxNjR8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Textured light green fabric background. Can be used in low opacity (10-20%) behind key summary stat cards or the welcome banner to add physical texture."
+      },
+      {
+        "category": "user_avatar",
+        "url": "https://images.pexels.com/photos/6112353/pexels-photo-6112353.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Professional woman in a gray suit. Use for the logged-in user profile picture."
+      }
+    ],
+    "icons": "lucide-react. Keep stroke-width to 1.5 for a sophisticated, lighter look."
+  },
+  "accessibility_and_testing": {
+    "data_testid": "MANDATORY: All interactive elements (buttons, inputs, selects, table rows, tab triggers) must have a data-testid attribute formatted as kebab-case and role-based (e.g., data-testid='order-approve-button', data-testid='date-range-filter').",
+    "contrast": "Text over backgrounds must meet APCA or WCAG AA standards. Muted text must still be clearly legible."
+  },
+  "specific_functionalities": {
+    "order_management": "Use simple, immediate actions. Approve/Reject should be clear icon-buttons or small text buttons inside the table row. Include confirmation dialogs (Shadcn Dialog) for destructive actions.",
+    "dashboard_stats": "Display Total Orders, Earnings, Pending Count in an airy 3-column or 4-column bento grid at the top. Use large typography for numbers (text-4xl font-light tracking-tight).",
+    "product_price_management": "Can be a separate tab or a drawer (Shadcn Sheet) sliding in from the right to quickly adjust pricing without leaving the context.",
+    "export_options": "A secondary button next to date filters: 'Export CSV', showing a quick download toast (Sonner) on completion."
+  }
+}
