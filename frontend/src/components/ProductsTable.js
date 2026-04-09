@@ -43,10 +43,15 @@ export default function ProductsTable() {
   const [sortBy, setSortBy] = useState('name');
   const [sortOrder, setSortOrder] = useState('asc');
   const [visibleColumns, setVisibleColumns] = useState(['id', 'name', 'category', 'brand_name', 'price', 'actions']);
+  const [categories, setCategories] = useState([]);
   const limit = 50;
   const [newProduct, setNewProduct] = useState({
     id: '', name: '', category: 'general', type: 'veg', storage: 'frozen', prep: 'raw', order: 'both', pack_sizes: [], bulk_available: false, price: '', brand_id: ''
   });
+
+  useEffect(() => {
+    axios.get(`${API}/products/categories`).then(res => setCategories(res.data)).catch(() => {});
+  }, []);
 
   const fetchProducts = async () => {
     setLoading(true);
@@ -142,10 +147,9 @@ export default function ProductsTable() {
               </SelectTrigger>
               <SelectContent style={{ backgroundColor: 'white', zIndex: 100 }}>
                 <SelectItem value="all">All Categories</SelectItem>
-                <SelectItem value="general">General</SelectItem>
-                <SelectItem value="fruits">Fruits</SelectItem>
-                <SelectItem value="vegetables">Vegetables</SelectItem>
-                <SelectItem value="dairy">Dairy</SelectItem>
+                {categories.map((cat) => (
+                  <SelectItem key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1).replace(/-/g, ' ')}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -283,10 +287,9 @@ export default function ProductsTable() {
                 <Select value={newProduct.category} onValueChange={(value) => setNewProduct({ ...newProduct, category: value })}>
                   <SelectTrigger className="mt-2 rounded-sm border-input" style={{ backgroundColor: 'white' }}><SelectValue /></SelectTrigger>
                   <SelectContent style={{ backgroundColor: 'white', zIndex: 100 }}>
-                    <SelectItem value="general">General</SelectItem>
-                    <SelectItem value="fruits">Fruits</SelectItem>
-                    <SelectItem value="vegetables">Vegetables</SelectItem>
-                    <SelectItem value="dairy">Dairy</SelectItem>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1).replace(/-/g, ' ')}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

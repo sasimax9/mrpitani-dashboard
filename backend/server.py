@@ -1075,6 +1075,17 @@ async def get_products_simple(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Product.id, Product.name).order_by(Product.name))
     return [{"id": row[0], "name": row[1]} for row in result.all()]
 
+@api_router.get("/products/categories")
+async def get_product_categories(db: AsyncSession = Depends(get_db)):
+    """Get all distinct product categories"""
+    result = await db.execute(
+        select(Product.category)
+        .where(Product.category.isnot(None))
+        .distinct()
+        .order_by(Product.category)
+    )
+    return [row[0] for row in result.all()]
+
 app.include_router(api_router)
 
 app.add_middleware(
