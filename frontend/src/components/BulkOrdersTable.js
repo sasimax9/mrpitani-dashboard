@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { Fragment, useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import { Check, X, Search, ChevronLeft, ChevronRight, ArrowUpDown, Radio } from 'lucide-react';
+import { Check, X, Search, ChevronLeft, ChevronRight, ArrowUpDown, ChevronDown, ChevronUp, Radio } from 'lucide-react';
 import { format } from 'date-fns';
 import Skeleton, { TableSkeleton } from '@/components/ui/skeleton';
 import ColumnChooser from '@/components/ui/column-chooser';
@@ -42,6 +42,7 @@ export default function BulkOrdersTable({ onUpdate }) {
   const [sortBy, setSortBy] = useState('created_at');
   const [sortOrder, setSortOrder] = useState('desc');
   const [visibleColumns, setVisibleColumns] = useState(['id', 'company_name', 'contact_name', 'total', 'status', 'date', 'actions']);
+  const [expandedOrder, setExpandedOrder] = useState(null);
   const [isLive, setIsLive] = useState(false);
   const [liveEvent, setLiveEvent] = useState(null);
   const limit = 50;
@@ -167,6 +168,14 @@ export default function BulkOrdersTable({ onUpdate }) {
     );
   };
 
+  const getItemLabel = (item) => item.product_name || item.name || item.product || item.item_name || 'Item';
+  const getItemUnit = (item) => item.pack_size || item.unit || item.uom || '-';
+  const getItemQuantity = (item) => item.quantity_kg ?? item.quantity ?? item.qty ?? '-';
+  const getItemTotal = (item) => {
+    const value = item.total_price ?? item.total ?? item.amount;
+    return value ?? '-';
+  };
+
   return (
     <div className="space-y-4" data-testid="bulk-orders-table-container">
       {/* Live indicator */}
@@ -244,6 +253,7 @@ export default function BulkOrdersTable({ onUpdate }) {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50 hover:bg-muted/50">
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider w-10"></TableHead>
                     {visibleColumns.includes('id') && <TableHead className="text-xs font-semibold uppercase tracking-wider">Order ID</TableHead>}
                     {visibleColumns.includes('company_name') && <SortableHeader column="company_name">Company</SortableHeader>}
                     {visibleColumns.includes('contact_name') && <SortableHeader column="contact_name">Contact</SortableHeader>}
@@ -261,41 +271,86 @@ export default function BulkOrdersTable({ onUpdate }) {
                 </TableHeader>
                 <TableBody>
                   {orders.map((order) => (
-                    <TableRow key={order.id} className="border-b border-border hover:bg-muted/30 transition-colors" data-testid={`bulk-order-row-${order.id}`}>
-                      {visibleColumns.includes('id') && <TableCell className="text-sm font-mono">{order.id.slice(0, 8)}</TableCell>}
-                      {visibleColumns.includes('company_name') && <TableCell className="text-sm font-medium">{order.company_name || 'N/A'}</TableCell>}
-                      {visibleColumns.includes('contact_name') && <TableCell className="text-sm">{order.contact_name}</TableCell>}
-                      {visibleColumns.includes('contact_phone') && <TableCell className="text-sm text-muted-foreground">{order.contact_phone}</TableCell>}
-                      {visibleColumns.includes('contact_email') && <TableCell className="text-sm text-muted-foreground">{order.contact_email || 'N/A'}</TableCell>}
-                      {visibleColumns.includes('total_weight_kg') && <TableCell className="text-sm">{order.total_weight_kg}</TableCell>}
-                      {visibleColumns.includes('subtotal') && <TableCell className="text-sm">₹{order.subtotal}</TableCell>}
-                      {visibleColumns.includes('discount_percent') && <TableCell className="text-sm">{order.discount_percent}%</TableCell>}
-                      {visibleColumns.includes('total') && <TableCell className="text-sm font-medium">₹{order.total}</TableCell>}
-                      {visibleColumns.includes('status') && <TableCell>{getStatusBadge(order.status)}</TableCell>}
-                      {visibleColumns.includes('notes') && <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{order.notes || '-'}</TableCell>}
-                      {visibleColumns.includes('date') && <TableCell className="text-sm text-muted-foreground">{format(new Date(order.created_at), 'MMM dd, yyyy')}</TableCell>}
-                      {visibleColumns.includes('actions') && (
-                        <TableCell>
-                          <div className="flex gap-2">
-                            {order.status === 'pending' && (
-                              <>
-                                <Button size="sm" onClick={() => updateStatus(order.id, 'approved')} className="bg-primary hover:bg-[#1C2922] text-white rounded-sm h-8 px-3" data-testid={`approve-bulk-order-${order.id}`}>
-                                  <Check className="h-4 w-4 mr-1" /> Approve
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => updateStatus(order.id, 'rejected')} className="border-destructive text-destructive hover:bg-destructive hover:text-white rounded-sm h-8 px-3" data-testid={`reject-bulk-order-${order.id}`}>
-                                  <X className="h-4 w-4 mr-1" /> Reject
-                                </Button>
-                              </>
-                            )}
-                            {order.status === 'approved' && (
-                              <Button size="sm" onClick={() => updateStatus(order.id, 'completed')} className="bg-success-dark hover:bg-[#1C2922] text-white rounded-sm h-8 px-3" data-testid={`complete-bulk-order-${order.id}`}>
-                                <Check className="h-4 w-4 mr-1" /> Complete
-                              </Button>
-                            )}
-                          </div>
+                    <Fragment key={order.id}>
+                      <TableRow
+                        className="border-b border-border hover:bg-muted/30 transition-colors cursor-pointer"
+                        data-testid={`bulk-order-row-${order.id}`}
+                        onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}
+                      >
+                        <TableCell className="w-10">
+                          {order.items && order.items.length > 0 && (
+                            expandedOrder === order.id
+                              ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                              : <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          )}
                         </TableCell>
+                        {visibleColumns.includes('id') && <TableCell className="text-sm font-mono">{order.id.slice(0, 8)}</TableCell>}
+                        {visibleColumns.includes('company_name') && <TableCell className="text-sm font-medium">{order.company_name || 'N/A'}</TableCell>}
+                        {visibleColumns.includes('contact_name') && <TableCell className="text-sm">{order.contact_name}</TableCell>}
+                        {visibleColumns.includes('contact_phone') && <TableCell className="text-sm text-muted-foreground">{order.contact_phone}</TableCell>}
+                        {visibleColumns.includes('contact_email') && <TableCell className="text-sm text-muted-foreground">{order.contact_email || 'N/A'}</TableCell>}
+                        {visibleColumns.includes('total_weight_kg') && <TableCell className="text-sm">{order.total_weight_kg}</TableCell>}
+                        {visibleColumns.includes('subtotal') && <TableCell className="text-sm">₹{order.subtotal}</TableCell>}
+                        {visibleColumns.includes('discount_percent') && <TableCell className="text-sm">{order.discount_percent}%</TableCell>}
+                        {visibleColumns.includes('total') && <TableCell className="text-sm font-medium">₹{order.total}</TableCell>}
+                        {visibleColumns.includes('status') && <TableCell>{getStatusBadge(order.status)}</TableCell>}
+                        {visibleColumns.includes('notes') && <TableCell className="text-sm text-muted-foreground max-w-xs truncate">{order.notes || '-'}</TableCell>}
+                        {visibleColumns.includes('date') && <TableCell className="text-sm text-muted-foreground">{format(new Date(order.created_at), 'MMM dd, yyyy')}</TableCell>}
+                        {visibleColumns.includes('actions') && (
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <div className="flex gap-2">
+                              {order.status === 'pending' && (
+                                <>
+                                  <Button size="sm" onClick={() => updateStatus(order.id, 'approved')} className="bg-primary hover:bg-[#1C2922] text-white rounded-sm h-8 px-3" data-testid={`approve-bulk-order-${order.id}`}>
+                                    <Check className="h-4 w-4 mr-1" /> Approve
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => updateStatus(order.id, 'rejected')} className="border-destructive text-destructive hover:bg-destructive hover:text-white rounded-sm h-8 px-3" data-testid={`reject-bulk-order-${order.id}`}>
+                                    <X className="h-4 w-4 mr-1" /> Reject
+                                  </Button>
+                                </>
+                              )}
+                              {order.status === 'approved' && (
+                                <Button size="sm" onClick={() => updateStatus(order.id, 'completed')} className="bg-success-dark hover:bg-[#1C2922] text-white rounded-sm h-8 px-3" data-testid={`complete-bulk-order-${order.id}`}>
+                                  <Check className="h-4 w-4 mr-1" /> Complete
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        )}
+                      </TableRow>
+
+                      {expandedOrder === order.id && order.items && order.items.length > 0 && (
+                        <TableRow className="bg-muted/10">
+                          <TableCell colSpan={visibleColumns.length + 1} className="p-0">
+                            <div className="px-8 py-4 border-l-4 border-primary/40">
+                              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                                Bulk Order Items ({order.items.length})
+                              </div>
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border">
+                                    <th className="text-left py-2 pr-4">Item</th>
+                                    <th className="text-left py-2 pr-4">Unit</th>
+                                    <th className="text-right py-2 pr-4">Qty</th>
+                                    <th className="text-right py-2">Total</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {order.items.map((item, index) => (
+                                    <tr key={`${order.id}-item-${item.id || index}`} className="border-b border-border/50" data-testid={`bulk-order-item-inline-${order.id}-${index}`}>
+                                      <td className="py-2 pr-4 font-medium">{getItemLabel(item)}</td>
+                                      <td className="py-2 pr-4 text-muted-foreground">{getItemUnit(item)}</td>
+                                      <td className="py-2 pr-4 text-right">{getItemQuantity(item)}</td>
+                                      <td className="py-2 text-right font-medium">{getItemTotal(item)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </TableCell>
+                        </TableRow>
                       )}
-                    </TableRow>
+                    </Fragment>
                   ))}
                 </TableBody>
               </Table>
