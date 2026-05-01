@@ -45,7 +45,7 @@ export default function Sidebar({ activeModule, onModuleChange, onLogout, userRo
                 <span className="text-white font-bold text-xl font-heading">M</span>
               </div>
               <div>
-                <h1 className="text-xl font-bold font-heading text-foreground">mrpitani</h1>
+                <h1 className="text-xl font-bold font-heading text-foreground">Sri Chandana Foods</h1>
                 <p className="text-xs text-muted-foreground">CRM System</p>
               </div>
             </div>
