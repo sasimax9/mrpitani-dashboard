@@ -68,7 +68,7 @@ export default function Login({ onLogin }) {
               </div>
               <div className="text-left">
                 <h1 className="text-2xl font-bold tracking-tight text-foreground font-heading">
-                  mrpitani
+                  Sri Chandana Foods
                 </h1>
                 <p className="text-xs text-muted-foreground">CRM System</p>
               </div>
