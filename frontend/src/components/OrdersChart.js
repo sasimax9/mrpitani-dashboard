@@ -1,10 +1,12 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 export default function OrdersChart({ data }) {
+  const chartData = Array.isArray(data) ? data : [];
+
   return (
     <div className="w-full h-80" data-testid="orders-chart">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
+        <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#E4EBE4" vertical={false} />
           <XAxis
             dataKey="date"

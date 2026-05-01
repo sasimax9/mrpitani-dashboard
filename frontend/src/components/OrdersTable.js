@@ -12,7 +12,7 @@ import ColumnChooser from '@/components/ui/column-chooser';
 import { supabase } from '../lib/supabase';
 import { requestNotificationPermission, notifyNewOrder, notifyOrderUpdate } from '../lib/notifications';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || process.env.REACT_APP_API_URL;
 const API = `${BACKEND_URL}/api`;
 
 const ALL_COLUMNS = [

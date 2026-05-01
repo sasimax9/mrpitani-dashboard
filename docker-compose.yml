@@ -5,12 +5,11 @@ services:
       dockerfile: Dockerfile.backend
     ports:
       - "8000:8000"
+    env_file:
+      - backend/.env
     environment:
       - PORT=8000
-      - DATABASE_URL=${DATABASE_URL}
       - JWT_SECRET=${JWT_SECRET:-change-me}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
     restart: unless-stopped
 
@@ -20,6 +19,7 @@ services:
       dockerfile: Dockerfile
       args:
         REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:8000}
+        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-http://localhost:8000}
         REACT_APP_SUPABASE_URL: ${REACT_APP_SUPABASE_URL:-https://your-project.supabase.co}
         REACT_APP_SUPABASE_KEY: ${REACT_APP_SUPABASE_KEY:-your-anon-key}
     ports:
