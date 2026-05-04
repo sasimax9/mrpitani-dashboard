@@ -10,8 +10,8 @@ from typing import List, Optional
 from datetime import datetime, date, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, desc, asc
-from database import get_db, engine
-from models import Order, BulkOrder, Product, Brand, OrderItem, User, ProductBrandVariant
+from .database import get_db, engine
+from .models import Order, BulkOrder, Product, Brand, OrderItem, User, ProductBrandVariant
 import io
 import csv
 from decimal import Decimal
@@ -19,7 +19,7 @@ import bcrypt
 import jwt
 from datetime import timezone
 import uuid as uuid_lib
-from supabase_storage import upload_image as supabase_upload, delete_image as supabase_delete
+from .supabase_storage import upload_image as supabase_upload, delete_image as supabase_delete
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
